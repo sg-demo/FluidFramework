@@ -22,7 +22,9 @@ export class ADOSizeComparator {
     localReportPath: string,
     adoBuildId: number | undefined,
     getFallbackCommit?: ((startingCommit: string) => Generator<string>) | undefined);
+    // @deprecated
     createSizeComparisonMessage(tagWaiting: boolean): Promise<BundleComparisonResult>;
+    getSizeComparison(tagWaiting: boolean): Promise<SizeComparison>;
     static naiveFallbackCommitGenerator(startingCommit: string): Generator<string>;
 }
 
@@ -283,6 +285,16 @@ export class prCommentsUtils {
     createOrReplaceThread(message: string, threadType: string | undefined): Promise<void>;
     createOrUpdateThread(message: string, threadType: string | undefined): Promise<void>;
     updateThreadStatus(threadType: string, commentThreadStatus: CommentThreadStatus): Promise<void>;
+}
+
+// @public
+export interface SizeComparison {
+    // (undocumented)
+    baselineCommit: string | undefined;
+    // (undocumented)
+    comparison: BundleComparison[] | undefined;
+    // (undocumented)
+    error: string | undefined;
 }
 
 // @public (undocumented)

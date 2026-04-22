@@ -26,7 +26,23 @@ import {
 import { getBuildTagForCommit } from "./getBuildTagForCommit";
 import { getBundleBuddyConfigMap } from "./getBundleBuddyConfigMap";
 import { getBundleSummaries } from "./getBundleSummaries";
-import { getCommentForBundleDiff, getSimpleComment } from "./getCommentForBundleDiff";
+import { getCommentForBundleDiff } from "./getCommentForBundleDiff";
+
+/**
+ * Result of a size comparison against a baseline build, without rendered message.
+ *
+ * Exactly one of `comparison` or `error` is populated:
+ * on success, `comparison` is set and `error` is undefined; on failure (e.g., no usable
+ * baseline found), `error` is set and `comparison` is undefined.
+ *
+ * `baselineCommit` reflects the commit that was ultimately used (or attempted last) —
+ * it may be defined even when `error` is set.
+ */
+export interface SizeComparison {
+	comparison: BundleComparison[] | undefined;
+	baselineCommit: string | undefined;
+	error: string | undefined;
+}
 
 export class ADOSizeComparator {
 	/**
@@ -80,15 +96,19 @@ export class ADOSizeComparator {
 	}
 
 	/**
-	 * Create a size comparison message that can be posted to a PR
+	 * Run the bundle size comparison against the baseline build and return structured data.
+	 *
+	 * Use this when you want the raw comparison data (e.g., to serialize as JSON for a
+	 * downstream renderer). For a single "rendered message + data" result (kept for
+	 * backward compatibility with the legacy Danger-based flow), see
+	 * {@link ADOSizeComparator.createSizeComparisonMessage}.
+	 *
 	 * @param tagWaiting - If the build should be tagged to be updated when the baseline
 	 * build completes (if it wasn't already complete when the comparison runs)
-	 * @returns The size comparison result with formatted message and raw data.  In case
-	 * of failure, the message contains the error message and the raw data will be undefined.
+	 * @returns Either a populated `comparison` (success) or an `error` string (failure).
+	 * `baselineCommit` is the commit that was ultimately used (or attempted last).
 	 */
-	public async createSizeComparisonMessage(
-		tagWaiting: boolean,
-	): Promise<BundleComparisonResult> {
+	public async getSizeComparison(tagWaiting: boolean): Promise<SizeComparison> {
 		let baselineCommit: string | undefined = getBaselineCommit();
 		console.log(`The baseline commit for this PR is ${baselineCommit}`);
 
@@ -119,34 +139,28 @@ export class ADOSizeComparator {
 
 			// Baseline build does not have id
 			if (baselineBuild.id === undefined) {
-				const message = `Baseline build does not have a build id`;
-				console.log(message);
-				return { message, comparison: undefined };
+				const error = `Baseline build does not have a build id`;
+				console.log(error);
+				return { comparison: undefined, baselineCommit, error };
 			}
 
 			// Baseline build is pending
 			if (baselineBuild.status !== BuildStatus.Completed) {
-				const message = getSimpleComment(
-					"Baseline build for this PR has not yet completed.",
-					baselineCommit,
-				);
-				console.log(message);
+				const error = "Baseline build for this PR has not yet completed.";
+				console.log(error);
 
 				if (tagWaiting) {
 					this.tagBuildAsWaiting(baselineCommit);
 				}
 
-				return { message, comparison: undefined };
+				return { comparison: undefined, baselineCommit, error };
 			}
 
 			// Baseline build failed
 			if (baselineBuild.result !== BuildResult.Succeeded) {
-				const message = getSimpleComment(
-					"Baseline CI build failed, cannot generate bundle analysis at this time",
-					baselineCommit,
-				);
-				console.log(message);
-				return { message, comparison: undefined };
+				const error = "Baseline CI build failed, cannot generate bundle analysis at this time";
+				console.log(error);
+				return { comparison: undefined, baselineCommit, error };
 			}
 
 			// Baseline build succeeded
@@ -186,17 +200,39 @@ export class ADOSizeComparator {
 
 		// Unable to find a usable baseline
 		if (baselineCommit === undefined || baselineZip === undefined) {
-			const message = `Could not find a usable baseline build with search starting at CI ${getBaselineCommit()}`;
-			console.log(message);
-			return { message, comparison: undefined };
+			const error = `Could not find a usable baseline build with search starting at CI ${getBaselineCommit()}`;
+			console.log(error);
+			return { comparison: undefined, baselineCommit, error };
 		}
 
 		const comparison: BundleComparison[] = await this.createComparisonFromZip(baselineZip);
 		console.log(JSON.stringify(comparison));
 
-		const message = getCommentForBundleDiff(comparison, baselineCommit);
-		console.log(message);
+		return { comparison, baselineCommit, error: undefined };
+	}
 
+	/**
+	 * Create a size comparison message that can be posted to a PR.
+	 *
+	 * @deprecated Thin back-compat shim around {@link ADOSizeComparator.getSizeComparison} for the
+	 * legacy Danger-based flow. This wrapper (along with the HTML renderer) is scheduled
+	 * for removal when PR bundle comparison moves to the GitHub Actions worker workflow;
+	 * new callers should use {@link ADOSizeComparator.getSizeComparison} and handle rendering themselves.
+	 *
+	 * @param tagWaiting - If the build should be tagged to be updated when the baseline
+	 * build completes (if it wasn't already complete when the comparison runs)
+	 * @returns The size comparison result with formatted message and raw data.  In case
+	 * of failure, the message contains the error message and the raw data will be undefined.
+	 */
+	public async createSizeComparisonMessage(
+		tagWaiting: boolean,
+	): Promise<BundleComparisonResult> {
+		const { comparison, baselineCommit, error } = await this.getSizeComparison(tagWaiting);
+		if (comparison === undefined) {
+			return { message: error ?? "", comparison: undefined };
+		}
+		const message = getCommentForBundleDiff(comparison, baselineCommit!);
+		console.log(message);
 		return { message, comparison };
 	}
 
