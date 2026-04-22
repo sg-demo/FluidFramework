@@ -421,6 +421,37 @@ extends:
                   # At this point we want to publish the artifact with the bundle size analysis,
                   # but as part of 1ES migration that's now part of templateContext.outputs below.
 
+                  # Computes the bundle size diff against the baseline CI build (definitionId 48 in the public
+                  # project) and writes artifacts/bundleSizeDiff/result.json. The result is consumed by the
+                  # post-bundle-size-comment GitHub Actions workflow, which posts the PR comment on behalf
+                  # of github-actions[bot] (triggered by the Azure Pipelines check_run completion for the
+                  # Build stage). See AB#56981.
+                  # TODO(AB#56981): Once PR A lands, reassess whether this step + its artifact belong in a
+                  # dedicated template instead of inline here.
+                  - task: Npm@1
+                    displayName: (PR only) Generate bundle size diff
+                    condition: and(succeeded(), eq(variables['Build.Reason'], 'PullRequest'))
+                    env:
+                      # $(System.AccessToken) works anonymously for the public project, but bundle-size-tools'
+                      # getAzureDevopsApi currently hardcodes PAT auth, so we pass it through.
+                      ADO_API_TOKEN: $(System.AccessToken)
+                      TARGET_BRANCH_NAME: '$(targetBranchName)'
+                      PR_NUMBER: '$(System.PullRequest.PullRequestNumber)'
+                    inputs:
+                      command: custom
+                      workingDir: '$(Pipeline.Workspace)/${{ parameters.buildDirectory }}'
+                      customCommand: 'run bundle-analysis:compare'
+
+                  # Copy the generated result.json under its own subfolder so it publishes as a separate
+                  # pipeline artifact from bundleAnalysis. Source path must match the --outputDir default
+                  # of `flub generate bundleSizeDiff` (artifacts/bundleSizeDiff).
+                  - task: CopyFiles@2
+                    displayName: (PR only) Copy bundle size diff to artifact staging directory
+                    condition: and(succeeded(), eq(variables['Build.Reason'], 'PullRequest'))
+                    inputs:
+                      sourceFolder: '$(Pipeline.Workspace)/${{ parameters.buildDirectory }}/artifacts/bundleSizeDiff'
+                      targetFolder: $(Build.ArtifactStagingDirectory)/bundleSizeDiff
+
                   # TODO(AB#56981): Re-enable once githubPublicRepoSecret is rotated in prague-key-vault.
                   # Disabled because the token is expired/rejected.
                   # Original condition: and(succeeded(), eq(variables['Build.Reason'], 'PullRequest'))
@@ -548,6 +579,17 @@ extends:
                       condition: and( succeeded(), ne(variables['Build.Reason'], 'PullRequest') )
                       targetPath: $(Build.ArtifactStagingDirectory)/bundleAnalysis
                       artifactName: bundleAnalysis
+                      sbomEnabled: false
+                      publishLocation: pipeline
+
+                    # bundleSizeDiff: the artifactName is consumed by the post-bundle-size-comment GitHub
+                    # Actions workflow, which downloads it anonymously via the ADO build artifacts REST API
+                    # on check_run completion. Any rename here must be mirrored in that workflow.
+                    - output: pipelineArtifact
+                      displayName: Publish Artifacts - bundle-size-diff
+                      condition: and( succeeded(), eq(variables['Build.Reason'], 'PullRequest') )
+                      targetPath: $(Build.ArtifactStagingDirectory)/bundleSizeDiff
+                      artifactName: bundleSizeDiff
                       sbomEnabled: false
                       publishLocation: pipeline
 
