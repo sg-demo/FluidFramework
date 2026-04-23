@@ -29,20 +29,19 @@ const adoConstants = {
 // Matches where `flub generate bundleStats` (invoked via `npm run bundle-analysis:collect`) writes.
 const defaultLocalReportPath = "./artifacts/bundleAnalysis";
 
-// Default output directory. The consuming GitHub Actions workflow looks for `result.json`
-// inside the `bundleSizeDiff` pipeline artifact.
+// Default output directory. The pipeline publishes this directory as the `bundleSizeDiff`
+// artifact.
 const defaultOutputDir = "./artifacts/bundleSizeDiff";
 
 // Any single non-total metric that grows by more than this threshold is considered a
-// regression. Matches the historical value used by the Danger-based flow.
+// regression.
 const sizeRegressionThresholdBytes = 5120;
 
 /**
  * Shape of the `result.json` file produced by this command.
  *
- * Consumed by the GitHub Actions workflow that posts the PR comment. The workflow reads
- * `hasContent` first; when `false`, `comparison` and `error` are not read (so this command
- * emits them as `null` in that state). When `true`, exactly one of `comparison` / `error`
+ * `hasContent` is the single field consumers should read first. When `false`, both
+ * `comparison` and `error` are `null`. When `true`, exactly one of `comparison` / `error`
  * is populated.
  */
 interface BundleSizeDiffResult {
@@ -57,7 +56,7 @@ interface BundleSizeDiffResult {
 
 /**
  * Compute whether any bundle shows a non-total metric growing by more than the regression
- * threshold. Mirrors the logic used by the legacy Danger flow.
+ * threshold.
  */
 function detectSizeRegression(comparison: BundleComparison[]): boolean {
 	return comparison.some((bundle: BundleComparison) =>
@@ -76,8 +75,7 @@ function detectSizeRegression(comparison: BundleComparison[]): boolean {
 }
 
 /**
- * Return true when the comparison has no non-zero metric diffs. Used to decide whether
- * the PR comment should be posted (or, if there's already a sticky comment, deleted).
+ * Return true when the comparison has no non-zero metric diffs.
  */
 function comparisonHasNoChanges(comparison: BundleComparison[]): boolean {
 	for (const { commonBundleMetrics } of comparison) {
@@ -94,7 +92,7 @@ export default class GenerateBundleSizeDiff extends BaseCommand<
 	typeof GenerateBundleSizeDiff
 > {
 	static readonly description =
-		`Compare the PR's locally-collected bundle reports against the baseline CI build and write a structured result to disk. The output is consumed by the GitHub Actions workflow that posts the PR comment.`;
+		`Compare the PR's locally-collected bundle reports against the baseline CI build and write the result as a structured result.json file.`;
 
 	static readonly flags = {
 		localReportPath: Flags.directory({
@@ -145,8 +143,8 @@ export default class GenerateBundleSizeDiff extends BaseCommand<
 
 		let result: BundleSizeDiffResult;
 		if (error !== undefined) {
-			// Failure to find a usable baseline — surface the message as a PR comment so
-			// regressions in the comparison pipeline don't disappear silently.
+			// Failure to find a usable baseline — set hasContent so consumers surface the
+			// error rather than treating it as a no-change result.
 			result = {
 				prNumber,
 				baseCommit: baselineCommit ?? null,
@@ -163,8 +161,8 @@ export default class GenerateBundleSizeDiff extends BaseCommand<
 				"getSizeComparison returned no comparison and no error; this should not happen",
 			);
 		} else if (comparisonHasNoChanges(comparison)) {
-			// Normal path with zero-delta bundles — the workflow deletes any prior sticky
-			// comment and adds no new one.
+			// Zero-delta bundles — emit hasContent=false so consumers treat this as a
+			// no-content case.
 			result = {
 				prNumber,
 				baseCommit: baselineCommit ?? null,

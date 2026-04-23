@@ -28,7 +28,7 @@ import { getBundleBuddyConfigMap } from "./getBundleBuddyConfigMap";
 import { getBundleSummaries } from "./getBundleSummaries";
 
 /**
- * Result of a size comparison against a baseline build, without rendered message.
+ * Result of a size comparison against a baseline build.
  *
  * Exactly one of `comparison` or `error` is populated:
  * on success, `comparison` is set and `error` is undefined; on failure (e.g., no usable
@@ -95,8 +95,7 @@ export class ADOSizeComparator {
 	}
 
 	/**
-	 * Run the bundle size comparison against the baseline build and return structured data
-	 * suitable for serializing as JSON for a downstream renderer.
+	 * Run the bundle size comparison against the baseline build.
 	 *
 	 * @param tagWaiting - If the build should be tagged to be updated when the baseline
 	 * build completes (if it wasn't already complete when the comparison runs)

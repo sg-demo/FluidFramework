@@ -422,18 +422,14 @@ extends:
                   # but as part of 1ES migration that's now part of templateContext.outputs below.
 
                   # Computes the bundle size diff against the baseline CI build (definitionId 48 in the public
-                  # project) and writes artifacts/bundleSizeDiff/result.json. The result is consumed by the
-                  # post-bundle-size-comment GitHub Actions workflow, which posts the PR comment on behalf
-                  # of github-actions[bot] (triggered by the Azure Pipelines check_run completion for the
-                  # Build stage). See AB#56981.
-                  # TODO(AB#56981): Once PR A lands, reassess whether this step + its artifact belong in a
-                  # dedicated template instead of inline here.
+                  # project) and writes artifacts/bundleSizeDiff/result.json, which is published as the
+                  # bundleSizeDiff pipeline artifact below.
+                  # TODO: consider factoring this step + its artifact into a dedicated template instead of
+                  # keeping it inline here.
                   - task: Npm@1
                     displayName: (PR only) Generate bundle size diff
                     condition: and(succeeded(), eq(variables['Build.Reason'], 'PullRequest'))
                     env:
-                      # $(System.AccessToken) works anonymously for the public project, but bundle-size-tools'
-                      # getAzureDevopsApi currently hardcodes PAT auth, so we pass it through.
                       ADO_API_TOKEN: $(System.AccessToken)
                       TARGET_BRANCH_NAME: '$(targetBranchName)'
                       PR_NUMBER: '$(System.PullRequest.PullRequestNumber)'
@@ -566,9 +562,8 @@ extends:
                       sbomEnabled: false
                       publishLocation: pipeline
 
-                    # bundleSizeDiff: the artifactName is consumed by the post-bundle-size-comment GitHub
-                    # Actions workflow, which downloads it anonymously via the ADO build artifacts REST API
-                    # on check_run completion. Any rename here must be mirrored in that workflow.
+                    # The artifactName is a public-facing pipeline contract; downstream consumers
+                    # download it by name. Any rename here requires updating those consumers in lockstep.
                     - output: pipelineArtifact
                       displayName: Publish Artifacts - bundle-size-diff
                       condition: and( succeeded(), eq(variables['Build.Reason'], 'PullRequest') )
