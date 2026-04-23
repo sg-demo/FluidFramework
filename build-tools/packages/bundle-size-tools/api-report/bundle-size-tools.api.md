@@ -274,14 +274,15 @@ export class prCommentsUtils {
 }
 
 // @public
-export interface SizeComparison {
-    // (undocumented)
+export type SizeComparison = {
+    kind: "success";
+    baselineCommit: string;
+    comparison: BundleComparison[];
+} | {
+    kind: "error";
     baselineCommit: string | undefined;
-    // (undocumented)
-    comparison: BundleComparison[] | undefined;
-    // (undocumented)
-    error: string | undefined;
-}
+    error: string;
+};
 
 // @public (undocumented)
 export const totalSizeMetricName = "Total Size";

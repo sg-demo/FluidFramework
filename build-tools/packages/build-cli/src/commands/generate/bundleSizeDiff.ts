@@ -38,21 +38,25 @@ const defaultOutputDir = "./artifacts/bundleSizeDiff";
 const sizeRegressionThresholdBytes = 5120;
 
 /**
- * Shape of the `result.json` file produced by this command.
+ * Shape of the `result.json` file produced by this command, discriminated by `kind`.
  *
- * `hasContent` is the single field consumers should read first. When `false`, both
- * `comparison` and `error` are `null`. When `true`, exactly one of `comparison` / `error`
- * is populated.
+ * On `"no-changes"`, the comparison ran and found no size deltas.
+ * On `"changes"`, the comparison found size deltas; `comparison` holds the diff and
+ * `sizeRegressionDetected` flags any non-total metric that grew past the threshold.
+ * On `"error"`, no usable baseline was available; `error` holds the reason.
+ *
+ * `baseCommit` reflects the last commit attempted; it may be `undefined` on the error
+ * variant if the baseline search never reached a candidate.
  */
-interface BundleSizeDiffResult {
+type BundleSizeDiffResult = {
 	prNumber: number;
-	baseCommit: string | null;
+	baseCommit: string | undefined;
 	targetBranch: string;
-	hasContent: boolean;
-	sizeRegressionDetected: boolean;
-	comparison: BundleComparison[] | null;
-	error: string | null;
-}
+} & (
+	| { kind: "no-changes" }
+	| { kind: "changes"; sizeRegressionDetected: boolean; comparison: BundleComparison[] }
+	| { kind: "error"; error: string }
+);
 
 /**
  * Compute whether any bundle shows a non-total metric growing by more than the regression
@@ -138,49 +142,24 @@ export default class GenerateBundleSizeDiff extends BaseCommand<
 			undefined,
 			ADOSizeComparator.naiveFallbackCommitGenerator,
 		);
-		const { comparison, baselineCommit, error } =
-			await sizeComparator.getSizeComparison(false);
+		const comparisonResult = await sizeComparator.getSizeComparison(false);
 
+		const common = {
+			prNumber,
+			baseCommit: comparisonResult.baselineCommit,
+			targetBranch: targetBranchName,
+		};
 		let result: BundleSizeDiffResult;
-		if (error !== undefined) {
-			// Failure to find a usable baseline — set hasContent so consumers surface the
-			// error rather than treating it as a no-change result.
-			result = {
-				prNumber,
-				baseCommit: baselineCommit ?? null,
-				targetBranch: targetBranchName,
-				hasContent: true,
-				sizeRegressionDetected: false,
-				comparison: null,
-				error,
-			};
-		} else if (comparison === undefined) {
-			// Defensive: getSizeComparison's contract is that one of `comparison` / `error`
-			// is always set, but guard against an unexpected all-undefined return anyway.
-			this.error(
-				"getSizeComparison returned no comparison and no error; this should not happen",
-			);
-		} else if (comparisonHasNoChanges(comparison)) {
-			// Zero-delta bundles — emit hasContent=false so consumers treat this as a
-			// no-content case.
-			result = {
-				prNumber,
-				baseCommit: baselineCommit ?? null,
-				targetBranch: targetBranchName,
-				hasContent: false,
-				sizeRegressionDetected: false,
-				comparison: null,
-				error: null,
-			};
+		if (comparisonResult.kind === "error") {
+			result = { ...common, kind: "error", error: comparisonResult.error };
+		} else if (comparisonHasNoChanges(comparisonResult.comparison)) {
+			result = { ...common, kind: "no-changes" };
 		} else {
 			result = {
-				prNumber,
-				baseCommit: baselineCommit ?? null,
-				targetBranch: targetBranchName,
-				hasContent: true,
-				sizeRegressionDetected: detectSizeRegression(comparison),
-				comparison,
-				error: null,
+				...common,
+				kind: "changes",
+				sizeRegressionDetected: detectSizeRegression(comparisonResult.comparison),
+				comparison: comparisonResult.comparison,
 			};
 		}
 

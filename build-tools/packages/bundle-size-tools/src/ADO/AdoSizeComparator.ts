@@ -28,20 +28,16 @@ import { getBundleBuddyConfigMap } from "./getBundleBuddyConfigMap";
 import { getBundleSummaries } from "./getBundleSummaries";
 
 /**
- * Result of a size comparison against a baseline build.
+ * Result of a size comparison against a baseline build, discriminated by `kind`.
  *
- * Exactly one of `comparison` or `error` is populated:
- * on success, `comparison` is set and `error` is undefined; on failure (e.g., no usable
- * baseline found), `error` is set and `comparison` is undefined.
- *
- * `baselineCommit` reflects the commit that was ultimately used (or attempted last) —
- * it may be defined even when `error` is set.
+ * On `"success"`, `comparison` holds the bundle diff against `baselineCommit`.
+ * On `"error"`, the comparison could not be produced and `error` holds the reason;
+ * `baselineCommit` reflects the last commit that was attempted and may be `undefined`
+ * if the search never found a candidate.
  */
-export interface SizeComparison {
-	comparison: BundleComparison[] | undefined;
-	baselineCommit: string | undefined;
-	error: string | undefined;
-}
+export type SizeComparison =
+	| { kind: "success"; baselineCommit: string; comparison: BundleComparison[] }
+	| { kind: "error"; baselineCommit: string | undefined; error: string };
 
 export class ADOSizeComparator {
 	/**
@@ -99,8 +95,7 @@ export class ADOSizeComparator {
 	 *
 	 * @param tagWaiting - If the build should be tagged to be updated when the baseline
 	 * build completes (if it wasn't already complete when the comparison runs)
-	 * @returns Either a populated `comparison` (success) or an `error` string (failure).
-	 * `baselineCommit` is the commit that was ultimately used (or attempted last).
+	 * @returns A {@link SizeComparison} tagged with `kind: "success"` or `kind: "error"`.
 	 */
 	public async getSizeComparison(tagWaiting: boolean): Promise<SizeComparison> {
 		let baselineCommit: string | undefined = getBaselineCommit();
@@ -135,7 +130,7 @@ export class ADOSizeComparator {
 			if (baselineBuild.id === undefined) {
 				const error = `Baseline build does not have a build id`;
 				console.log(error);
-				return { comparison: undefined, baselineCommit, error };
+				return { kind: "error", baselineCommit, error };
 			}
 
 			// Baseline build is pending
@@ -147,14 +142,14 @@ export class ADOSizeComparator {
 					this.tagBuildAsWaiting(baselineCommit);
 				}
 
-				return { comparison: undefined, baselineCommit, error };
+				return { kind: "error", baselineCommit, error };
 			}
 
 			// Baseline build failed
 			if (baselineBuild.result !== BuildResult.Succeeded) {
 				const error = "Baseline CI build failed, cannot generate bundle analysis at this time";
 				console.log(error);
-				return { comparison: undefined, baselineCommit, error };
+				return { kind: "error", baselineCommit, error };
 			}
 
 			// Baseline build succeeded
@@ -196,13 +191,13 @@ export class ADOSizeComparator {
 		if (baselineCommit === undefined || baselineZip === undefined) {
 			const error = `Could not find a usable baseline build with search starting at CI ${getBaselineCommit()}`;
 			console.log(error);
-			return { comparison: undefined, baselineCommit, error };
+			return { kind: "error", baselineCommit, error };
 		}
 
 		const comparison: BundleComparison[] = await this.createComparisonFromZip(baselineZip);
 		console.log(JSON.stringify(comparison));
 
-		return { comparison, baselineCommit, error: undefined };
+		return { kind: "success", baselineCommit, comparison };
 	}
 
 	private async tagBuildAsWaiting(baselineCommit: string): Promise<void> {
