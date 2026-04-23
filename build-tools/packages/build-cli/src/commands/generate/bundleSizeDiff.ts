@@ -17,8 +17,7 @@ import { Flags } from "@oclif/core";
 import { BaseCommand } from "../../library/commands/base.js";
 
 // ADO constants for the baseline build source.
-// Mirrors the values historically used by build-tools/packages/build-cli/src/library/dangerfile.cts,
-// and must match the "public" project + build-bundle-size-artifacts.yml (definitionId 48).
+// Must match the "public" project + build-bundle-size-artifacts.yml (definitionId 48).
 const adoConstants = {
 	orgUrl: "https://dev.azure.com/fluidframework",
 	projectName: "public",

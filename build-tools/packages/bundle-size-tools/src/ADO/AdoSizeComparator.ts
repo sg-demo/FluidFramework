@@ -8,7 +8,7 @@ import { BuildResult, BuildStatus } from "azure-devops-node-api/interfaces/Build
 import type JSZip from "jszip";
 import { join } from "path";
 
-import type { BundleComparison, BundleComparisonResult } from "../BundleBuddyTypes";
+import type { BundleComparison } from "../BundleBuddyTypes";
 import { compareBundles } from "../compareBundles";
 import { getBaselineCommit, getBuilds, getPriorCommit } from "../utilities";
 import {
@@ -26,7 +26,6 @@ import {
 import { getBuildTagForCommit } from "./getBuildTagForCommit";
 import { getBundleBuddyConfigMap } from "./getBundleBuddyConfigMap";
 import { getBundleSummaries } from "./getBundleSummaries";
-import { getCommentForBundleDiff } from "./getCommentForBundleDiff";
 
 /**
  * Result of a size comparison against a baseline build, without rendered message.
@@ -96,12 +95,8 @@ export class ADOSizeComparator {
 	}
 
 	/**
-	 * Run the bundle size comparison against the baseline build and return structured data.
-	 *
-	 * Use this when you want the raw comparison data (e.g., to serialize as JSON for a
-	 * downstream renderer). For a single "rendered message + data" result (kept for
-	 * backward compatibility with the legacy Danger-based flow), see
-	 * {@link ADOSizeComparator.createSizeComparisonMessage}.
+	 * Run the bundle size comparison against the baseline build and return structured data
+	 * suitable for serializing as JSON for a downstream renderer.
 	 *
 	 * @param tagWaiting - If the build should be tagged to be updated when the baseline
 	 * build completes (if it wasn't already complete when the comparison runs)
@@ -209,31 +204,6 @@ export class ADOSizeComparator {
 		console.log(JSON.stringify(comparison));
 
 		return { comparison, baselineCommit, error: undefined };
-	}
-
-	/**
-	 * Create a size comparison message that can be posted to a PR.
-	 *
-	 * @deprecated Thin back-compat shim around {@link ADOSizeComparator.getSizeComparison} for the
-	 * legacy Danger-based flow. This wrapper (along with the HTML renderer) is scheduled
-	 * for removal when PR bundle comparison moves to the GitHub Actions worker workflow;
-	 * new callers should use {@link ADOSizeComparator.getSizeComparison} and handle rendering themselves.
-	 *
-	 * @param tagWaiting - If the build should be tagged to be updated when the baseline
-	 * build completes (if it wasn't already complete when the comparison runs)
-	 * @returns The size comparison result with formatted message and raw data.  In case
-	 * of failure, the message contains the error message and the raw data will be undefined.
-	 */
-	public async createSizeComparisonMessage(
-		tagWaiting: boolean,
-	): Promise<BundleComparisonResult> {
-		const { comparison, baselineCommit, error } = await this.getSizeComparison(tagWaiting);
-		if (comparison === undefined) {
-			return { message: error ?? "", comparison: undefined };
-		}
-		const message = getCommentForBundleDiff(comparison, baselineCommit!);
-		console.log(message);
-		return { message, comparison };
 	}
 
 	private async tagBuildAsWaiting(baselineCommit: string): Promise<void> {
