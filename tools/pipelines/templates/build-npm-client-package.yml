@@ -424,9 +424,14 @@ extends:
                   # Computes the bundle size diff against the baseline CI build (definitionId 48 in the public
                   # project) and writes artifacts/bundleSizeDiff/result.json, which is published as the
                   # bundleSizeDiff pipeline artifact below.
+                  # Invoked via Bash@3 (not Npm@1) so `flub` resolves through the system PATH to the
+                  # workspace-built binary (globally `npm link`ed by set-package-version's invocation of
+                  # include-install-build-tools earlier in the Build job). An `npm run` invocation would
+                  # prepend node_modules/.bin to PATH, which resolves to the catalog-pinned build-cli that
+                  # does not (yet) include `flub generate bundleSizeDiff`.
                   # TODO: consider factoring this step + its artifact into a dedicated template instead of
                   # keeping it inline here.
-                  - task: Npm@1
+                  - task: Bash@3
                     displayName: (PR only) Generate bundle size diff
                     condition: and(succeeded(), eq(variables['Build.Reason'], 'PullRequest'))
                     env:
@@ -434,9 +439,11 @@ extends:
                       TARGET_BRANCH_NAME: '$(targetBranchName)'
                       PR_NUMBER: '$(System.PullRequest.PullRequestNumber)'
                     inputs:
-                      command: custom
-                      workingDir: '$(Pipeline.Workspace)/${{ parameters.buildDirectory }}'
-                      customCommand: 'run bundle-analysis:compare'
+                      targetType: inline
+                      workingDirectory: '$(Pipeline.Workspace)/${{ parameters.buildDirectory }}'
+                      script: |
+                        set -eu -o pipefail
+                        flub generate bundleSizeDiff
 
                   # Copy the generated result.json under its own subfolder so it publishes as a separate
                   # pipeline artifact from bundleAnalysis. Source path must match the --outputDir default
