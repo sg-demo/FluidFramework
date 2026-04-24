@@ -431,13 +431,20 @@ extends:
                   # does not (yet) include `flub generate bundleSizeDiff`.
                   # TODO: consider factoring this step + its artifact into a dedicated template instead of
                   # keeping it inline here.
+                  #
+                  # !!! TEST-BRANCH TWEAK — DO NOT MERGE !!!
+                  # Canonical condition is PR-only, and TARGET_BRANCH_NAME / PR_NUMBER flow from PR-scoped
+                  # system variables. Widened here to also fire on Manual runs so the step can be exercised
+                  # via an ADO pipeline manual run (where the PR-scoped variables are not defined).
+                  # Hardcoded TARGET_BRANCH_NAME=main and PR_NUMBER=0 so the command has valid inputs.
+                  # Revert before merging.
                   - task: Bash@3
                     displayName: (PR only) Generate bundle size diff
-                    condition: and(succeeded(), eq(variables['Build.Reason'], 'PullRequest'))
+                    condition: and(succeeded(), in(variables['Build.Reason'], 'PullRequest', 'Manual'))
                     env:
                       ADO_API_TOKEN: $(System.AccessToken)
-                      TARGET_BRANCH_NAME: '$(targetBranchName)'
-                      PR_NUMBER: '$(System.PullRequest.PullRequestNumber)'
+                      TARGET_BRANCH_NAME: main
+                      PR_NUMBER: '0'
                     inputs:
                       targetType: inline
                       workingDirectory: '$(Pipeline.Workspace)/${{ parameters.buildDirectory }}'
@@ -448,9 +455,10 @@ extends:
                   # Copy the generated result.json under its own subfolder so it publishes as a separate
                   # pipeline artifact from bundleAnalysis. Source path must match the --outputDir default
                   # of `flub generate bundleSizeDiff` (artifacts/bundleSizeDiff).
+                  # TEST-BRANCH TWEAK — DO NOT MERGE: condition widened to include Manual runs.
                   - task: CopyFiles@2
                     displayName: (PR only) Copy bundle size diff to artifact staging directory
-                    condition: and(succeeded(), eq(variables['Build.Reason'], 'PullRequest'))
+                    condition: and(succeeded(), in(variables['Build.Reason'], 'PullRequest', 'Manual'))
                     inputs:
                       sourceFolder: '$(Pipeline.Workspace)/${{ parameters.buildDirectory }}/artifacts/bundleSizeDiff'
                       targetFolder: $(Build.ArtifactStagingDirectory)/bundleSizeDiff
@@ -571,9 +579,10 @@ extends:
 
                     # The artifactName is a public-facing pipeline contract; downstream consumers
                     # download it by name. Any rename here requires updating those consumers in lockstep.
+                    # TEST-BRANCH TWEAK — DO NOT MERGE: condition widened to include Manual runs.
                     - output: pipelineArtifact
                       displayName: Publish Artifacts - bundle-size-diff
-                      condition: and( succeeded(), eq(variables['Build.Reason'], 'PullRequest') )
+                      condition: and( succeeded(), in(variables['Build.Reason'], 'PullRequest', 'Manual') )
                       targetPath: $(Build.ArtifactStagingDirectory)/bundleSizeDiff
                       artifactName: bundleSizeDiff
                       sbomEnabled: false
